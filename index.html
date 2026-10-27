@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+
+  <title>Veda Swara Checker</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fff8e8;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 15px;
+      max-width: 450px;
+      margin: auto;
+      box-shadow: 0 3px 12px #ddd;
+    }
+
+    h1 {
+      color: #8b4513;
+    }
+
+    .mantra {
+      font-size: 25px;
+      line-height: 1.8;
+      margin: 20px 0;
+    }
+
+    button {
+      background: #a0522d;
+      color: white;
+      border: none;
+      padding: 13px 20px;
+      margin: 7px;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    #status {
+      margin-top: 20px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>Veda Swara Checker</h1>
+
+    <p>Practice Vedic chanting</p>
+
+    <div class="mantra">
+      ॐ भूर्भुवः स्वः
+    </div>
+
+    <p>
+      Choose a verified reference mantra
+      before checking correctness.
+    </p>
+
+    <button id="start">Start Recording</button>
+    <button id="stop">Stop Recording</button>
+
+    <p id="status">Ready to practice.</p>
+    <p id="pitch"></p>
+  </div>
+
+  <script>
+    let audioContext;
+    let analyser;
+    let stream;
+    let animation;
+    let running = false;
+
+    const status = document.getElementById("status");
+    const pitch = document.getElementById("pitch");
+
+    document.getElementById("start").onclick =
+      async function () {
+        try {
+          stream = await navigator.mediaDevices
+            .getUserMedia({ audio: true });
+
+          audioContext = new AudioContext();
+
+          const source =
+            audioContext.createMediaStreamSource(stream);
+
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 4096;
+
+          source.connect(analyser);
+
+          running = true;
+          status.textContent =
+            "Microphone active. Analyzing your voice.";
+
+          analyzePitch();
+        } catch (error) {
+          status.textContent =
+            "Microphone unavailable. Allow microphone access.";
+        }
+      };
+
+    function analyzePitch() {
+      if (!running) return;
+
+      const data = new Float32Array(
+        analyser.fftSize
+      );
+
+      analyser.getFloatTimeDomainData(data);
+
+      let energy = 0;
+
+      for (const value of data) {
+        energy += value * value;
+      }
+
+      energy /= data.length;
+
+      if (energy < 0.0001) {
+        pitch.textContent =
+          "Listening for chanting...";
+      } else {
+        const frequency = estimatePitch(data);
+
+        pitch.textContent = frequency
+          ? "Estimated voice pitch: " +
+            frequency.toFixed(1) + " Hz"
+          : "Listening for a stable voice pitch...";
+      }
+
+      animation = requestAnimationFrame(analyzePitch);
+    }
+
+    function estimatePitch(data) {
+      const sampleRate = audioContext.sampleRate;
+      const minHz = 70;
+      const maxHz = 800;
+
+      const minLag = Math.floor(sampleRate / maxHz);
+      const maxLag = Math.floor(sampleRate / minHz);
+
+      let bestLag = -1;
+      let bestCorrelation = 0;
+
+      for (let lag = minLag; lag <= maxLag; lag++) {
+        let correlation = 0;
+
+        for (let i = 0; i < data.length - lag; i++) {
+          correlation += data[i] * data[i + lag];
+        }
+
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestLag = lag;
+        }
+      }
+
+      if (bestLag < 0 || bestCorrelation < 1) {
+        return null;
+      }
+
+      return sampleRate / bestLag;
+    }
+
+    document.getElementById("stop").onclick =
+      function () {
+        running = false;
+        cancelAnimationFrame(animation);
+
+        if (stream) {
+          stream.getTracks().forEach(
+            track => track.stop()
+          );
+        }
+
+        if (audioContext) {
+          audioContext.close();
+        }
+
+        status.textContent = "Recording stopped.";
+        pitch.textContent = "";
+      };
+  </script>
+</body>
+</html>
